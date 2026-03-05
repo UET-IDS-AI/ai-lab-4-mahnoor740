@@ -74,15 +74,46 @@ def gradient_descent_linreg(
     epochs: int = 200,
     theta0: Optional[np.ndarray] = None,
 ) -> GDResult:
-    """
-    Linear regression with batch gradient descent on MSE loss.
 
-    X should already include bias column if you want an intercept.
+    n, d = X.shape
 
-    Returns GDResult with final theta, per-epoch losses, and theta trajectory.
-    """
-    # TODO: implement
-    raise NotImplementedError
+    y = y.reshape(-1)
+
+    # initialize theta
+    if theta0 is None:
+        theta = np.zeros(d)
+    else:
+        theta = theta0.copy()
+
+    losses = []
+    thetas = []
+
+    for _ in range(epochs):
+
+        # prediction
+        y_pred = X @ theta
+
+        # error
+        error = y_pred - y
+
+        # MSE loss
+        loss = np.mean(error ** 2)
+        losses.append(loss)
+
+        # gradient
+        grad = (2 / n) * (X.T @ error)
+
+        # update rule
+        theta = theta - lr * grad
+
+        # store trajectory
+        thetas.append(theta.copy())
+
+    return GDResult(
+        theta=theta,
+        losses=np.array(losses),
+        thetas=np.array(thetas),
+    )
 
 
 def visualize_gradient_descent(
@@ -90,24 +121,28 @@ def visualize_gradient_descent(
     epochs: int = 60,
     seed: int = 0,
 ) -> Dict[str, np.ndarray]:
-    """
-    Create a small synthetic 2D-parameter problem (bias + 1 feature),
-    run gradient descent, and return data needed for visualization.
 
-    Return dict with:
-      - "theta_path": (T, 2) array of (theta0, theta1) over time
-      - "losses": (T,) loss values
-      - "X": design matrix used (with bias) shape (n, 2)
-      - "y": targets shape (n,)
+    np.random.seed(seed)
 
-    Students can plot:
-      - loss curve losses vs epoch
-      - theta trajectory in parameter space (theta0 vs theta1)
+    # synthetic data
+    n = 100
+    X = np.random.randn(n, 1)
 
-    Inspired by AML lecture gradient descent trajectory visualization. :contentReference[oaicite:1]{index=1}
-    """
-    # TODO: implement using gradient_descent_linreg and a synthetic dataset
-    raise NotImplementedError
+    # true relationship
+    y = 3 + 2 * X[:, 0] + np.random.randn(n) * 0.5
+
+    # add bias column
+    X_design = add_bias_column(X)
+
+    # run gradient descent
+    result = gradient_descent_linreg(X_design, y, lr=lr, epochs=epochs)
+
+    return {
+        "theta_path": result.thetas,
+        "losses": result.losses,
+        "X": X_design,
+        "y": y,
+    }
 
 
 # =========================
@@ -120,15 +155,51 @@ def diabetes_linear_gd(
     test_size: float = 0.2,
     seed: int = 0,
 ) -> Tuple[float, float, float, float, np.ndarray]:
-    """
-    Load diabetes dataset, split train/test, standardize, fit linear regression via GD.
 
-    Returns:
-      train_mse, test_mse, train_r2, test_r2, theta
-    """
-    # TODO: implement
-    raise NotImplementedError
+    # load dataset
+    data = datasets.load_diabetes()
+    X = data.data
+    y = data.target
 
+    # split
+    np.random.seed(seed)
+    n = X.shape[0]
+    indices = np.random.permutation(n)
+
+    split = int(n * (1 - test_size))
+
+    train_idx = indices[:split]
+    test_idx = indices[split:]
+
+    X_train = X[train_idx]
+    X_test = X[test_idx]
+    y_train = y[train_idx]
+    y_test = y[test_idx]
+
+    # standardize
+    X_train, X_test, mu, sigma = standardize_train_test(X_train, X_test)
+
+    # add bias
+    X_train = add_bias_column(X_train)
+    X_test = add_bias_column(X_test)
+
+    # train model
+    result = gradient_descent_linreg(X_train, y_train, lr=lr, epochs=epochs)
+
+    theta = result.theta
+
+    # predictions
+    y_train_pred = X_train @ theta
+    y_test_pred = X_test @ theta
+
+    # metrics
+    train_mse = mse(y_train, y_train_pred)
+    test_mse = mse(y_test, y_test_pred)
+
+    train_r2 = r2_score(y_train, y_train_pred)
+    test_r2 = r2_score(y_test, y_test_pred)
+
+    return train_mse, test_mse, train_r2, test_r2, theta
 
 # =========================
 # Q3: Diabetes regression using analytical solution
@@ -139,18 +210,51 @@ def diabetes_linear_analytical(
     test_size: float = 0.2,
     seed: int = 0,
 ) -> Tuple[float, float, float, float, np.ndarray]:
-    """
-    Closed-form solution (normal equation) for linear regression.
 
-    Uses a tiny ridge term (lambda) for numerical stability:
-      theta = (X^T X + lambda I)^(-1) X^T y
+    data = datasets.load_diabetes()
+    X = data.data
+    y = data.target
 
-    Returns:
-      train_mse, test_mse, train_r2, test_r2, theta
-    """
-    # TODO: implement
-    raise NotImplementedError
+    # split
+    np.random.seed(seed)
+    n = X.shape[0]
+    indices = np.random.permutation(n)
 
+    split = int(n * (1 - test_size))
+
+    train_idx = indices[:split]
+    test_idx = indices[split:]
+
+    X_train = X[train_idx]
+    X_test = X[test_idx]
+    y_train = y[train_idx]
+    y_test = y[test_idx]
+
+    # standardize
+    X_train, X_test, mu, sigma = standardize_train_test(X_train, X_test)
+
+    # add bias
+    X_train = add_bias_column(X_train)
+    X_test = add_bias_column(X_test)
+
+    # normal equation
+    d = X_train.shape[1]
+    I = np.eye(d)
+
+    theta = np.linalg.inv(X_train.T @ X_train + ridge_lambda * I) @ (X_train.T @ y_train)
+
+    # predictions
+    y_train_pred = X_train @ theta
+    y_test_pred = X_test @ theta
+
+    # metrics
+    train_mse = mse(y_train, y_train_pred)
+    test_mse = mse(y_test, y_test_pred)
+
+    train_r2 = r2_score(y_train, y_train_pred)
+    test_r2 = r2_score(y_test, y_test_pred)
+
+    return train_mse, test_mse, train_r2, test_r2, theta
 
 # =========================
 # Q4: Compare GD vs analytical
@@ -162,18 +266,28 @@ def diabetes_compare_gd_vs_analytical(
     test_size: float = 0.2,
     seed: int = 0,
 ) -> Dict[str, float]:
-    """
-    Fit diabetes regression using both GD and analytical solution and compare.
 
-    Return dict with:
-      - "theta_l2_diff"
-      - "train_mse_diff"
-      - "test_mse_diff"
-      - "train_r2_diff"
-      - "test_r2_diff"
-      - "theta_cosine_sim"
+    gd_train_mse, gd_test_mse, gd_train_r2, gd_test_r2, theta_gd = diabetes_linear_gd(
+        lr=lr, epochs=epochs, test_size=test_size, seed=seed
+    )
 
-    (Cosine similarity near 1 means parameters align.)
-    """
-    # TODO: implement
-    raise NotImplementedError
+    an_train_mse, an_test_mse, an_train_r2, an_test_r2, theta_an = diabetes_linear_analytical(
+        test_size=test_size, seed=seed
+    )
+
+    # L2 difference
+    theta_l2_diff = np.linalg.norm(theta_gd - theta_an)
+
+    # cosine similarity
+    cosine_sim = np.dot(theta_gd, theta_an) / (
+        np.linalg.norm(theta_gd) * np.linalg.norm(theta_an)
+    )
+
+    return {
+        "theta_l2_diff": float(theta_l2_diff),
+        "train_mse_diff": float(abs(gd_train_mse - an_train_mse)),
+        "test_mse_diff": float(abs(gd_test_mse - an_test_mse)),
+        "train_r2_diff": float(abs(gd_train_r2 - an_train_r2)),
+        "test_r2_diff": float(abs(gd_test_r2 - an_test_r2)),
+        "theta_cosine_sim": float(cosine_sim),
+    }      
